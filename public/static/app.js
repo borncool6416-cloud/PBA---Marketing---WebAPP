@@ -20,15 +20,29 @@ let posts = [];
 let currentView = 'login';
 
 // Initialize app
-document.addEventListener('DOMContentLoaded', () => {
-  checkAuth();
-});
+checkAuth();
+loadConfig();
+
+let appConfig = {
+  facebookAppId: ''
+};
+
+async function loadConfig() {
+  try {
+    const response = await axios.get('/api/config');
+    console.log('[DEBUG] API Response:', response.data);
+    appConfig = response.data;
+    console.log('[DEBUG] Loaded Config:', appConfig);
+  } catch (error) {
+    console.error('[DEBUG] Failed to load config:', error);
+  }
+}
 
 // Check authentication
 function checkAuth() {
   const token = localStorage.getItem(TOKEN_KEY);
   const user = localStorage.getItem(USER_KEY);
-  
+
   if (token && user) {
     currentUser = JSON.parse(user);
     loadDashboard();
@@ -116,26 +130,26 @@ function showLogin() {
   `;
 }
 
-window.showLoginTab = function() {
+window.showLoginTab = function () {
   document.getElementById('loginTab').className = 'flex-1 py-3 text-center font-semibold text-purple-600 border-b-2 border-purple-600';
   document.getElementById('registerTab').className = 'flex-1 py-3 text-center font-semibold text-gray-400';
   document.getElementById('loginForm').style.display = 'block';
   document.getElementById('registerForm').style.display = 'none';
 }
 
-window.showRegisterTab = function() {
+window.showRegisterTab = function () {
   document.getElementById('loginTab').className = 'flex-1 py-3 text-center font-semibold text-gray-400';
   document.getElementById('registerTab').className = 'flex-1 py-3 text-center font-semibold text-purple-600 border-b-2 border-purple-600';
   document.getElementById('loginForm').style.display = 'none';
   document.getElementById('registerForm').style.display = 'block';
 }
 
-window.handleLogin = async function(e) {
+window.handleLogin = async function (e) {
   e.preventDefault();
   const formData = new FormData(e.target);
   const email = formData.get('email');
   const password = formData.get('password');
-  
+
   try {
     const response = await axios.post('/api/auth/login', { email, password });
     localStorage.setItem(TOKEN_KEY, response.data.token);
@@ -147,13 +161,13 @@ window.handleLogin = async function(e) {
   }
 }
 
-window.handleRegister = async function(e) {
+window.handleRegister = async function (e) {
   e.preventDefault();
   const formData = new FormData(e.target);
   const fullName = formData.get('fullName');
   const email = formData.get('email');
   const password = formData.get('password');
-  
+
   try {
     const response = await axios.post('/api/auth/register', { email, password, fullName });
     localStorage.setItem(TOKEN_KEY, response.data.token);
@@ -177,7 +191,7 @@ async function loadDashboard() {
   currentView = 'dashboard';
   await loadConnectedAccounts();
   await loadPosts();
-  
+
   const app = document.getElementById('app');
   app.innerHTML = `
     <div class="flex h-screen bg-gray-50">
@@ -241,11 +255,11 @@ async function loadDashboard() {
       </div>
     </div>
   `;
-  
+
   showDashboardView();
 }
 
-window.handleLogout = function() {
+window.handleLogout = function () {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
   currentUser = null;
@@ -254,11 +268,11 @@ window.handleLogout = function() {
 
 // ==================== DASHBOARD VIEW ====================
 
-window.showDashboardView = async function() {
+window.showDashboardView = async function () {
   try {
     const response = await axios.get('/api/analytics/dashboard');
     const data = response.data;
-    
+
     const content = document.getElementById('mainContent');
     content.innerHTML = `
       <div class="mb-8">
@@ -363,9 +377,9 @@ window.showDashboardView = async function() {
 
 // ==================== ACCOUNTS VIEW ====================
 
-window.showAccountsView = async function() {
+window.showAccountsView = async function () {
   await loadConnectedAccounts();
-  
+
   const content = document.getElementById('mainContent');
   content.innerHTML = `
     <div class="mb-8">
@@ -429,7 +443,7 @@ function generatePlatformButtons() {
     { name: 'tiktok', label: 'TikTok', icon: 'fab fa-tiktok', gradient: 'from-gray-800 to-black' },
     { name: 'youtube', label: 'YouTube', icon: 'fab fa-youtube', gradient: 'from-red-600 to-red-700' }
   ];
-  
+
   return platforms.map(platform => `
     <button onclick="connectPlatform('${platform.name}')" class="p-4 border-2 border-gray-200 rounded-lg hover:border-purple-500 transition text-center">
       <div class="w-12 h-12 mx-auto mb-2 bg-gradient-to-r ${platform.gradient} rounded-full flex items-center justify-center">
@@ -452,18 +466,38 @@ function getPlatformGradient(platform) {
   return gradients[platform] || 'from-purple-600 to-pink-600';
 }
 
-window.connectPlatform = function(platform) {
+window.connectPlatform = function (platform) {
   if (platform === 'facebook') {
+    console.log('[DEBUG] Starting Facebook Auth');
     const redirectUri = encodeURIComponent(`${window.location.origin}/api/auth/facebook/callback`);
     const state = currentUser.id;
+    console.log('[DEBUG] Current App Config:', appConfig);
+    const appId = appConfig.facebookAppId || 'YOUR_FACEBOOK_APP_ID';
+    console.log('[DEBUG] Using App ID:', appId);
+
     window.open(
-      `https://www.facebook.com/v18.0/dialog/oauth?client_id=YOUR_FACEBOOK_APP_ID&redirect_uri=${redirectUri}&state=${state}&scope=pages_manage_posts,pages_read_engagement,pages_show_list`,
+      `https://www.facebook.com/v18.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&state=${state}&scope=pages_manage_posts,pages_read_engagement,pages_show_list`,
       'facebook-auth',
       'width=600,height=700'
     );
-    
+
     window.addEventListener('message', async (event) => {
       if (event.data.type === 'facebook-auth-success') {
+        await loadConnectedAccounts();
+        showAccountsView();
+      }
+    });
+} else if (platform === 'instagram') {
+    const redirectUri = encodeURIComponent(`${window.location.origin}/api/auth/instagram/callback`);
+    const state = currentUser.id;
+    const appId = appConfig.facebookAppId;
+    window.open(
+      `https://www.instagram.com/oauth/authorize?enable_fb_login=0&force_authentication=1&client_id=${appId}&redirect_uri=${redirectUri}&response_type=code&scope=instagram_business_basic,instagram_business_content_publish,instagram_business_manage_comments,instagram_business_manage_messages`,
+      'instagram-auth',
+      'width=600,height=700'
+    );
+    window.addEventListener('message', async (event) => {
+      if (event.data.type === 'instagram-auth-success') {
         await loadConnectedAccounts();
         showAccountsView();
       }
@@ -472,10 +506,10 @@ window.connectPlatform = function(platform) {
     alert(`${platform} integration coming soon!`);
   }
 }
-
-window.disconnectAccount = async function(accountId) {
-  if (!confirm('Are you sure you want to disconnect this account?')) return;
   
+window.disconnectAccount = async function (accountId) {
+  if (!confirm('Are you sure you want to disconnect this account?')) return;
+
   try {
     await axios.delete(`/api/social-accounts/${accountId}`);
     await loadConnectedAccounts();
@@ -496,9 +530,9 @@ async function loadConnectedAccounts() {
 
 // ==================== POSTS VIEW ====================
 
-window.showPostsView = async function() {
+window.showPostsView = async function () {
   await loadPosts();
-  
+
   const content = document.getElementById('mainContent');
   content.innerHTML = `
     <div class="mb-8 flex items-center justify-between">
@@ -537,11 +571,11 @@ window.showPostsView = async function() {
           <p class="text-gray-800 mb-4 line-clamp-3">${post.content}</p>
           <div class="flex items-center space-x-2 mb-4">
             ${post.platforms.map(platformId => {
-              const account = connectedAccounts.find(a => a.id === parseInt(platformId));
-              return account ? `<span class="w-8 h-8 rounded-full bg-gradient-to-r ${getPlatformGradient(account.platform)} flex items-center justify-center">
+    const account = connectedAccounts.find(a => a.id === parseInt(platformId));
+    return account ? `<span class="w-8 h-8 rounded-full bg-gradient-to-r ${getPlatformGradient(account.platform)} flex items-center justify-center">
                 <i class="fab fa-${account.platform} text-white text-sm"></i>
               </span>` : '';
-            }).join('')}
+  }).join('')}
           </div>
           ${post.scheduled_time ? `
             <div class="text-sm text-gray-600">
@@ -577,7 +611,7 @@ function getStatusBadge(status) {
   return badges[status] || badges.draft;
 }
 
-window.filterPosts = async function(status) {
+window.filterPosts = async function (status) {
   if (status === 'all') {
     await loadPosts();
   } else {
@@ -591,9 +625,9 @@ window.filterPosts = async function(status) {
   showPostsView();
 }
 
-window.deletePost = async function(postId) {
+window.deletePost = async function (postId) {
   if (!confirm('Are you sure you want to delete this post?')) return;
-  
+
   try {
     await axios.delete(`/api/posts/${postId}`);
     await loadPosts();
@@ -603,9 +637,9 @@ window.deletePost = async function(postId) {
   }
 }
 
-window.publishPost = async function(postId) {
+window.publishPost = async function (postId) {
   if (!confirm('Publish this post now?')) return;
-  
+
   try {
     const response = await axios.post(`/api/posts/${postId}/publish`);
     alert('Post published successfully!');
@@ -627,7 +661,7 @@ async function loadPosts() {
 
 // ==================== CREATE POST VIEW ====================
 
-window.showCreatePostView = function() {
+window.showCreatePostView = function () {
   const content = document.getElementById('mainContent');
   content.innerHTML = `
     <div class="mb-8">
@@ -693,26 +727,26 @@ window.showCreatePostView = function() {
       </form>
     </div>
   `;
-  
+
   // Character counter
   document.getElementById('postContent').addEventListener('input', (e) => {
     document.getElementById('charCount').textContent = e.target.value.length;
   });
 }
 
-window.handleCreatePost = async function(e) {
+window.handleCreatePost = async function (e) {
   e.preventDefault();
-  
+
   const content = document.getElementById('postContent').value;
   const scheduledTime = document.getElementById('scheduledTime').value;
   const platformCheckboxes = document.querySelectorAll('input[name="platforms"]:checked');
   const platforms = Array.from(platformCheckboxes).map(cb => cb.value);
-  
+
   if (platforms.length === 0) {
     alert('Please select at least one platform');
     return;
   }
-  
+
   try {
     await axios.post('/api/posts', {
       content,
@@ -720,7 +754,7 @@ window.handleCreatePost = async function(e) {
       scheduledTime: scheduledTime || null,
       mediaUrls: []
     });
-    
+
     alert('Post created successfully!');
     await loadPosts();
     showPostsView();
@@ -731,7 +765,7 @@ window.handleCreatePost = async function(e) {
 
 // ==================== AI TOOLS VIEW ====================
 
-window.showAIToolsView = function() {
+window.showAIToolsView = function () {
   const content = document.getElementById('mainContent');
   content.innerHTML = `
     <div class="mb-8">
@@ -817,44 +851,87 @@ window.showAIToolsView = function() {
   `;
 }
 
-window.generateCaption = async function(e) {
+window.generateCaption = async function (e) {
   e.preventDefault();
-  
+
+  const button = e.target.querySelector('button[type="submit"]');
+  const originalText = button.innerHTML;
+
   const topic = document.getElementById('captionTopic').value;
   const tone = document.getElementById('captionTone').value;
   const platform = document.getElementById('captionPlatform').value;
-  
+
   try {
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Generating...';
+
     const response = await axios.post('/api/ai/caption', { topic, tone, platform });
-    document.getElementById('captionText').textContent = response.data.caption;
-    document.getElementById('captionResult').classList.remove('hidden');
+
+    // Ensure the result container is visible and has the text
+    const resultContainer = document.getElementById('captionResult');
+    const resultText = document.getElementById('captionText');
+
+    resultText.textContent = response.data.caption;
+    resultContainer.classList.remove('hidden');
+    resultContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
   } catch (error) {
-    alert('Failed to generate caption. Make sure OpenAI API key is configured.');
+    console.error('AI Error:', error);
+    const errorMessage = error.response?.data?.error || 'Failed to generate caption. Please try again.';
+    alert(errorMessage);
+  } finally {
+    button.disabled = false;
+    button.innerHTML = originalText;
   }
 }
 
-window.generateHashtags = async function(e) {
+window.generateHashtags = async function (e) {
   e.preventDefault();
-  
+
+  const button = e.target.querySelector('button[type="submit"]');
+  const originalText = button.innerHTML;
+
   const topic = document.getElementById('hashtagTopic').value;
   const count = document.getElementById('hashtagCount').value;
-  
+
   try {
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Generating...';
+
     const response = await axios.post('/api/ai/hashtags', { topic, count: parseInt(count) });
-    document.getElementById('hashtagText').textContent = response.data.hashtags.join(' ');
-    document.getElementById('hashtagResult').classList.remove('hidden');
+
+    const resultContainer = document.getElementById('hashtagResult');
+    const resultText = document.getElementById('hashtagText');
+
+    resultText.textContent = response.data.hashtags.join(' ');
+    resultContainer.classList.remove('hidden');
+    resultContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
   } catch (error) {
-    alert('Failed to generate hashtags. Make sure OpenAI API key is configured.');
+    console.error('AI Error:', error);
+    const errorMessage = error.response?.data?.error || 'Failed to generate hashtags. Please try again.';
+    alert(errorMessage);
+  } finally {
+    button.disabled = false;
+    button.innerHTML = originalText;
   }
 }
 
-window.copyCaption = function() {
+window.showAIAssist = function () {
+  // For now, simpler implementation: navigate to AI Tools
+  // In a future update, this could be a modal
+  if (confirm('Navigate to AI Tools? Your current draft will be saved to your dashboard after you return.')) {
+    showAIToolsView();
+  }
+}
+
+window.copyCaption = function () {
   const text = document.getElementById('captionText').textContent;
   navigator.clipboard.writeText(text);
   alert('Caption copied to clipboard!');
 }
 
-window.copyHashtags = function() {
+window.copyHashtags = function () {
   const text = document.getElementById('hashtagText').textContent;
   navigator.clipboard.writeText(text);
   alert('Hashtags copied to clipboard!');
@@ -862,7 +939,7 @@ window.copyHashtags = function() {
 
 // ==================== ANALYTICS VIEW ====================
 
-window.showAnalyticsView = async function() {
+window.showAnalyticsView = async function () {
   const content = document.getElementById('mainContent');
   content.innerHTML = `
     <div class="mb-8">
@@ -888,7 +965,7 @@ window.showAnalyticsView = async function() {
   `;
 }
 
-window.syncAnalytics = async function() {
+window.syncAnalytics = async function () {
   try {
     await axios.post('/api/analytics/sync');
     alert('Analytics synced successfully!');
@@ -900,7 +977,7 @@ window.syncAnalytics = async function() {
 
 // ==================== MEDIA VIEW ====================
 
-window.showMediaView = function() {
+window.showMediaView = function () {
   const content = document.getElementById('mainContent');
   content.innerHTML = `
     <div class="mb-8 flex items-center justify-between">
@@ -925,7 +1002,7 @@ window.showMediaView = function() {
 
 // ==================== INBOX VIEW ====================
 
-window.showInboxView = async function() {
+window.showInboxView = async function () {
   const content = document.getElementById('mainContent');
   content.innerHTML = `
     <div class="mb-8">
